@@ -3,16 +3,7 @@ package org.brapi.v2.api;
 import java.io.UnsupportedEncodingException;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import javax.validation.Valid;
@@ -206,8 +197,11 @@ public class VariantsApiController implements VariantsApi {
             	
             	Query q = new Query(Criteria.where("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID).in(variantIDs));
             	q.fields().include(AbstractVariantData.SECTION_ADDITIONAL_INFO);
-            	for (VariantRunData vrd : MongoTemplateManager.get(module).find(q, VariantRunData.class))
-            		variantsById.get(vrd.getVariantId()).getAdditionalInfo().putAll(vrd.getAdditionalInfo());	// FIXE: this is sub-optimal as it may be called several times for the same variant
+            	for (VariantRunData vrd : MongoTemplateManager.get(module).find(q, VariantRunData.class)) {
+					Optional.ofNullable(variantsById.get(vrd.getVariantId()))
+							.ifPresent(variant -> variant.getAdditionalInfo()
+														 .putAll(vrd.getAdditionalInfo()));    // FIXE: this is sub-optimal as it may be called several times for the same variant
+				}
 			}
 			else if (runQuery != null)
 	        	varList = VariantsApiController.getSortedVariantListChunk(MongoTemplateManager.get(module), VariantRunData.class, runQuery, page * body.getPageSize(), body.getPageSize());
