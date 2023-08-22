@@ -3,16 +3,7 @@ package org.brapi.v2.api;
 import java.io.UnsupportedEncodingException;
 import java.net.SocketException;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import javax.validation.Valid;
@@ -60,6 +51,14 @@ import fr.cirad.tools.mongo.MongoTemplateManager;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import fr.cirad.utils.Constants;
 import io.swagger.annotations.ApiParam;
+import org.springframework.data.mongodb.core.aggregation.AddFieldsOperation;
+import org.springframework.data.mongodb.core.aggregation.Aggregation;
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.match;
+import static org.springframework.data.mongodb.core.aggregation.Aggregation.sort;
+import org.springframework.data.mongodb.core.aggregation.AggregationResults;
+import static org.springframework.data.mongodb.core.aggregation.ArrayOperators.IndexOfArray.arrayOf;
+import org.springframework.data.mongodb.core.aggregation.MatchOperation;
+import org.springframework.data.mongodb.core.aggregation.SortOperation;
 
 @javax.annotation.Generated(value = "io.swagger.codegen.v3.generators.java.SpringCodegen", date = "2021-03-22T14:25:44.495Z[GMT]")
 @Controller
@@ -105,10 +104,9 @@ public class VariantsApiController implements VariantsApi {
         	body.setPageSize(VariantsApi.MAX_SUPPORTED_VARIANT_COUNT_PER_PAGE);
         int page = body.getPageToken() == null ? 0 : Integer.parseInt(body.getPageToken());
 
-		Collection<String> variantIDs = null;
+		Collection<String> variantIDs = new HashSet<>();
 		try {
 			if (fGotVariants) {
-				variantIDs = new HashSet<>();
 				for (String variantDbId : body.getVariantDbIds()) {
 					String[] info = GigwaSearchVariantsRequest.getInfoFromId(variantDbId, 2);
 					if (module != null && !module.equals(info[0])) {
@@ -118,8 +116,9 @@ public class VariantsApiController implements VariantsApi {
 					}
 					module = info[0];
 					variantIDs.add(info[1]);
-				}
-				varQuery = new Query(Criteria.where("_id").in(variantIDs));
+				}                                
+                                
+				//varQuery = new Query(Criteria.where("_id").in(variantIDs));
 			}
 	    	else if (fGotRefDbId) {
 	        	String[] info = GigwaSearchVariantsRequest.getInfoFromId(body.getReferenceDbId(), 2);
@@ -171,13 +170,23 @@ public class VariantsApiController implements VariantsApi {
 				return new ResponseEntity<>(vlr, HttpStatus.FORBIDDEN);
 			}
 			
-			List<AbstractVariantData> varList;
-			if (varQuery != null) {
+			List<? extends AbstractVariantData> varList;
+			if (varQuery != null || !variantIDs.isEmpty()) {
+                            if (fGotVariants) {
+                                //use aggregation to keep the order of variantDbIds
+                                MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
+                                MatchOperation match = match(Criteria.where("_id").in(variantIDs));
+                                AddFieldsOperation addFields = AddFieldsOperation.addField("_order").withValue(arrayOf(variantIDs).indexOf("$_id")).build();
+                                SortOperation sort = sort(Sort.by(Sort.Direction.ASC, "_order"));
+                                Aggregation aggregation = Aggregation.newAggregation(match, addFields, sort, Aggregation.skip(page * body.getPageSize()), Aggregation.limit(body.getPageSize())).withOptions(Aggregation.newAggregationOptions().allowDiskUse(true).build());
+                                AggregationResults<VariantData> results = mongoTemplate.aggregate(aggregation, VariantData.class, VariantData.class);
+                                varList = results.getMappedResults();
+                            } else {                         
 				varQuery.limit(body.getPageSize());
 				if (page > 0)
 					varQuery.skip(page * body.getPageSize());
 				varList = IteratorUtils.toList(MongoTemplateManager.get(module).find(varQuery, VariantData.class).iterator());
-				
+                            }
 				// we may need to grab functional annotations from VRD records (FIXME: these should really be duplicated into VariantData)
             	if (!fGotVariants)
             		variantIDs = varList.stream().map(avd -> avd.getVariantId()).collect(Collectors.toList());
@@ -188,8 +197,11 @@ public class VariantsApiController implements VariantsApi {
             	
             	Query q = new Query(Criteria.where("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID).in(variantIDs));
             	q.fields().include(AbstractVariantData.SECTION_ADDITIONAL_INFO);
-            	for (VariantRunData vrd : MongoTemplateManager.get(module).find(q, VariantRunData.class))
-            		variantsById.get(vrd.getVariantId()).getAdditionalInfo().putAll(vrd.getAdditionalInfo());	// FIXE: this is sub-optimal as it may be called several times for the same variant
+            	for (VariantRunData vrd : MongoTemplateManager.get(module).find(q, VariantRunData.class)) {
+					Optional.ofNullable(variantsById.get(vrd.getVariantId()))
+							.ifPresent(variant -> variant.getAdditionalInfo()
+														 .putAll(vrd.getAdditionalInfo()));    // FIXE: this is sub-optimal as it may be called several times for the same variant
+				}
 			}
 			else if (runQuery != null)
 	        	varList = VariantsApiController.getSortedVariantListChunk(MongoTemplateManager.get(module), VariantRunData.class, runQuery, page * body.getPageSize(), body.getPageSize());
