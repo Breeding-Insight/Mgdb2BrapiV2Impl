@@ -53,8 +53,7 @@ import fr.cirad.mgdb.model.mongo.maintypes.VariantData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData;
 import fr.cirad.mgdb.model.mongo.maintypes.VariantRunData.VariantRunDataId;
 import fr.cirad.mgdb.model.mongo.subtypes.SampleGenotype;
-import fr.cirad.mgdb.service.IGigwaService;
-import fr.cirad.model.GigwaSearchVariantsRequest;
+import fr.cirad.tools.Helper;
 import fr.cirad.tools.mongo.MongoTemplateManager;
 import fr.cirad.tools.security.base.AbstractTokenManager;
 import htsjdk.variant.vcf.VCFFormatHeaderLine;
@@ -89,9 +88,9 @@ public class CallsApiController implements CallsApi {
             String authorization) {
         
         if (variantSetDbId == null && callSetDbId != null) {
-            String[] info = GigwaSearchVariantsRequest.getInfoFromId(callSetDbId, 2);
+            String[] info = Helper.getInfoFromId(callSetDbId, 2);
             GenotypingSample sample = MongoTemplateManager.get(info[0]).find(new Query(Criteria.where("_id").is(Integer.parseInt(info[1]))), GenotypingSample.class).iterator().next();
-            variantSetDbId = info[0] + IGigwaService.ID_SEPARATOR + sample.getProjectId() + IGigwaService.ID_SEPARATOR + sample.getRun();
+            variantSetDbId = info[0] + Helper.ID_SEPARATOR + sample.getProjectId() + Helper.ID_SEPARATOR + sample.getRun();
         }
 		
         CallsSearchRequest csr = new CallsSearchRequest();
@@ -118,8 +117,9 @@ public class CallsApiController implements CallsApi {
         String token = ServerinfoApiController.readToken(authorization);
         List<Call> callsToUpdate = body.getData();
         String unknownGT = body.getUnknownString() != null ? body.getUnknownString() : ".";
-        String sepPhased = body.getSepPhased() != null ? body.getSepPhased()  : "/";
-        String sepUnphased = body.getSepUnphased() != null ? body.getSepUnphased() : "|";
+        String sepPhased = body.getSepPhased() != null ? body.getSepPhased()  : "\\|";
+        String sepUnphased = body.getSepUnphased() != null ? body.getSepUnphased() : "/";
+        boolean expandHomozygotes = body.isExpandHomozygotes() != null ? body.isExpandHomozygotes() : true;
         
         CallsListResponse response = new CallsListResponse();
         Metadata metadata = new Metadata();
@@ -136,22 +136,22 @@ public class CallsApiController implements CallsApi {
                 metadata.addStatusItem(status);
                 return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
             } else if (module == null) {
-                module = GigwaSearchVariantsRequest.getInfoFromId(c.getVariantSetDbId(), 3)[0];
-                variantIds.add(GigwaSearchVariantsRequest.getInfoFromId(c.getVariantDbId(), 2)[1]);
-                callSetIds.add(Integer.valueOf(GigwaSearchVariantsRequest.getInfoFromId(c.getCallSetDbId(), 2)[1]));    
+                module = Helper.getInfoFromId(c.getVariantSetDbId(), 3)[0];
+                variantIds.add(Helper.getInfoFromId(c.getVariantDbId(), 2)[1]);
+                callSetIds.add(Integer.valueOf(Helper.getInfoFromId(c.getCallSetDbId(), 2)[1]));    
                 variantSetDbIds.add(c.getVariantSetDbId());
                 
-            } else if (!module.equals(GigwaSearchVariantsRequest.getInfoFromId(c.getVariantSetDbId(), 3)[0])) {
+            } else if (!module.equals(Helper.getInfoFromId(c.getVariantSetDbId(), 3)[0])) {
                 Status status = new Status();
                 status.setMessage("You must specify VariantSets belonging to the same program / trial!");
                 response.getMetadata().addStatusItem(status);
                 return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
-            } else if (!module.equals(GigwaSearchVariantsRequest.getInfoFromId(c.getCallSetDbId(), 2)[0])) {
+            } else if (!module.equals(Helper.getInfoFromId(c.getCallSetDbId(), 2)[0])) {
                 Status status = new Status();
                 status.setMessage("You must specify CallSets belonging to the same program / trial!");
                 response.getMetadata().addStatusItem(status);
                 return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
-            } else if (!module.equals(GigwaSearchVariantsRequest.getInfoFromId(c.getVariantDbId(), 2)[0])) {
+            } else if (!module.equals(Helper.getInfoFromId(c.getVariantDbId(), 2)[0])) {
                 Status status = new Status();
                 status.setMessage("You must specify Variants belonging to the same program / trial!");
                 response.getMetadata().addStatusItem(status);
@@ -189,8 +189,8 @@ public class CallsApiController implements CallsApi {
         ArrayList<String> missingVariantSets = new ArrayList<>();
         for (String vsId:variantSetDbIds) {
             Query q = new Query(new Criteria().andOperator(
-                    Criteria.where("_id." + VariantRunData.VariantRunDataId.FIELDNAME_PROJECT_ID).is(Integer.valueOf(GigwaSearchVariantsRequest.getInfoFromId(vsId, 3)[1])),
-                    Criteria.where("_id." + DBVCFHeader.VcfHeaderId.FIELDNAME_RUN).is(GigwaSearchVariantsRequest.getInfoFromId(vsId, 3)[2])
+                    Criteria.where("_id." + VariantRunData.VariantRunDataId.FIELDNAME_PROJECT_ID).is(Integer.valueOf(Helper.getInfoFromId(vsId, 3)[1])),
+                    Criteria.where("_id." + DBVCFHeader.VcfHeaderId.FIELDNAME_RUN).is(Helper.getInfoFromId(vsId, 3)[2])
             ));
             List<VariantRunData> vrd = mongoTemplate.find(q, VariantRunData.class); 
             if (vrd == null || vrd.isEmpty()) {
@@ -206,7 +206,7 @@ public class CallsApiController implements CallsApi {
         
     	// check permissions
     	Collection<Integer> projectIDs = callsToUpdate.stream()
-                .map(call -> Integer.parseInt(GigwaSearchVariantsRequest.getInfoFromId(call.getVariantSetDbId(), 3)[1]))
+                .map(call -> Integer.parseInt(Helper.getInfoFromId(call.getVariantSetDbId(), 3)[1]))
                 .collect(Collectors.toSet());
 
         List<Integer> forbiddenProjectIDs = new ArrayList<>();
@@ -249,13 +249,13 @@ public class CallsApiController implements CallsApi {
         for (Call c:callsToUpdate) {
             List<Criteria> crits = new ArrayList<>();
 
-            String[] info = GigwaSearchVariantsRequest.getInfoFromId(c.getVariantSetDbId(), 3);
+            String[] info = Helper.getInfoFromId(c.getVariantSetDbId(), 3);
             int projectId = Integer.parseInt(info[1]);
             String runName = info[2];
 
             crits.add(Criteria.where("_id." + VariantRunDataId.FIELDNAME_PROJECT_ID).is(projectId));
             crits.add(Criteria.where("_id." + VariantRunDataId.FIELDNAME_RUNNAME).is(runName));
-            crits.add(Criteria.where("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID).is(GigwaSearchVariantsRequest.getInfoFromId(c.getVariantDbId(), 2)[1]));                
+            crits.add(Criteria.where("_id." + VariantRunDataId.FIELDNAME_VARIANT_ID).is(Helper.getInfoFromId(c.getVariantDbId(), 2)[1]));                
 
             Query runQuery = new Query(new Criteria().andOperator(crits.toArray(new Criteria[crits.size()]))); 
             
@@ -333,55 +333,99 @@ public class CallsApiController implements CallsApi {
                 
             } else { //update variantRunData
                 runQuery.fields().include(VariantRunData.FIELDNAME_KNOWN_ALLELES);
-                String[] splitCallSetDbId = GigwaSearchVariantsRequest.getInfoFromId(c.getCallSetDbId(), 2);
+                String[] splitCallSetDbId = Helper.getInfoFromId(c.getCallSetDbId(), 2);
                 runQuery.fields().include(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1]);
                 
-                Update update = new Update();
+                Update update = new Update();                
+
+                Document ai = new Document();
                 
-                if (c.getGenotypeValue() != null) { 
-                    String gt = null;
-                    if (c.getGenotypeValue().equals(unknownGT)) {
-                        if (c.getAdditionalInfo().isEmpty() && c.getGenotypeMetadata().isEmpty()) {
-                            update.unset(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1]); //remove the sp
-                        } else {                        
-                            update.unset(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.FIELDNAME_GENOTYPECODE); //remove gt field
-                        }
-                    } else {
+                String gt = null;
+                if (c.getGenotypeValue() != null) {                    
+                    List<String> knownAlleles = vrd.get(0).getKnownAlleles();
+                    boolean wrongGTFormat = false;
+
+                    if (!c.getGenotypeValue().equals(unknownGT)) {
                         String[] splitUnphased = c.getGenotypeValue().split(sepUnphased);
-                        String[] splitPhased = c.getGenotypeValue().split(sepPhased);                        
+                        String[] splitPhased = c.getGenotypeValue().split(sepPhased); 
                         if (splitUnphased.length > 1 && splitUnphased.length == ploidyLevels.get(projectId)) {
-                            gt = String.join("/", splitUnphased);
+                            boolean containsOnlyKnownAlleles = Arrays.stream(splitUnphased).allMatch(x -> x.equals(knownAlleles.get(0)) || x.equals(knownAlleles.get(1)));
+                            if (containsOnlyKnownAlleles) {
+                                Arrays.setAll(splitUnphased, x -> splitUnphased[x].equals(knownAlleles.get(0)) ? "0" : "1");
+                                gt = String.join("/", splitUnphased);
+                            } else {
+                                wrongGTFormat = true;
+                            }            
+                            
                         } else if (splitPhased.length > 1 && splitPhased.length == ploidyLevels.get(projectId)) {
-                            gt = String.join("/", splitPhased);
-                            //add phGT and phID into ai
-                            update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + VariantData.GT_FIELD_PHASED_GT, String.join("|", splitPhased));
-                            update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + VariantData.GT_FIELD_PHASED_ID, splitCallSetDbId[1]);
-                        } else if ((c.getGenotypeValue().equals("0") || c.getGenotypeValue().equals("1")) && !body.isExpandHomozygotes()){
-                            gt = c.getGenotypeValue();
-                        }       
+                            boolean containsOnlyKnownAlleles = Arrays.stream(splitPhased).allMatch(x -> x.equals(knownAlleles.get(0)) || x.equals(knownAlleles.get(1)));
+                            if (containsOnlyKnownAlleles) {
+                                Arrays.setAll(splitPhased, x -> splitPhased[x].equals(knownAlleles.get(0)) ? "0" : "1");
+                                gt = String.join("/", splitPhased);
+                                //add phGT and phID into ai
+                                ai.put(VariantData.GT_FIELD_PHASED_GT, String.join("|", splitPhased));
+                                ai.put(VariantData.GT_FIELD_PHASED_ID, splitCallSetDbId[1]);
+                            } else {
+                                wrongGTFormat = true;
+                            } 
+                            
+                        } else if (!expandHomozygotes) { //homozygote (one allele)
+                            if (c.getGenotypeValue().equals(knownAlleles.get(0))) {
+                                gt = "0/0";
+                            } else if (c.getGenotypeValue().equals(knownAlleles.get(1))) {
+                                gt = "1/1";
+                            } else {
+                                wrongGTFormat = true;
+                            }
+                        } else { //one allele homozygote but expandHomozygotes is true
+                            Status status = new Status();
+                            status.setMessage("Wrong genotypeValue given : only one allele given. Set expandHomozygotes to true.");
+                            response.getMetadata().addStatusItem(status);
+                            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+                        }
                         
-                    }
-                    if (gt != null) {
-                        if (gt.equals("1/0")) {
+                        if (gt != null && gt.equals("1/0")) {
                             gt = "0/1";
                         }
-                        update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.FIELDNAME_GENOTYPECODE, gt);
+                        
+                        if (wrongGTFormat) {
+                            Status status = new Status();
+                            status.setMessage("Wrong genotypeValue given : at least one genotype doesn't correspond to reference alleles " + knownAlleles.toString());
+                            response.getMetadata().addStatusItem(status);
+                            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
+                        }
                     }
-                }
-                
+                }                
                 
                 //add additionalInfo into variantRunData ai
                 if (c.getAdditionalInfo() !=  null && !c.getAdditionalInfo().isEmpty()) {
                     for (String key:c.getAdditionalInfo().keySet()) {
-                        update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + key, c.getAdditionalInfo().get(key));
+                        ai.put(key, c.getAdditionalInfo().get(key));
+                        //update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + key, c.getAdditionalInfo().get(key));
                     }
-                }
+                } 
                 
                 //add genotypeMetadata into variantRunData ai
                 if (c.getGenotypeMetadata() != null) {
-                    for (CallGenotypeMetadata gm:c.getGenotypeMetadata())
-                        update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gm.getFieldAbbreviation(), gm.getFieldValue());
+                    for (CallGenotypeMetadata gm:c.getGenotypeMetadata()) {
+                        ai.put(gm.getFieldAbbreviation(), gm.getFieldValue());
+                        //update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1] + "." + SampleGenotype.SECTION_ADDITIONAL_INFO + "." + gm.getFieldAbbreviation(), gm.getFieldValue());
+                    }
                 }
+                
+                Document newSp = new Document();
+                if (gt != null) {
+                    newSp.put(SampleGenotype.FIELDNAME_GENOTYPECODE, gt);
+                }
+                if (!ai.isEmpty()) {
+                    newSp.put(SampleGenotype.SECTION_ADDITIONAL_INFO, ai);
+                }
+                if (newSp.isEmpty()) { 
+                    update.unset(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1]); //remove the sample from VariantRunData
+                } else {
+                    update.set(VariantRunData.FIELDNAME_SAMPLEGENOTYPES + "." + splitCallSetDbId[1], newSp); //replace existing sp by newSp
+                }
+                
                 
                 try {
                     UpdateResult ur = mongoTemplate.updateFirst(runQuery, update, VariantRunData.class, mongoTemplate.getCollectionName(VariantRunData.class));
@@ -460,14 +504,14 @@ public class CallsApiController implements CallsApi {
                 String module = null;
                 for (String variantSetDbId : variantSetDbIds) {
                     if (module == null)  {
-                        module = GigwaSearchVariantsRequest.getInfoFromId(variantSetDbId, 3)[0];
+                        module = Helper.getInfoFromId(variantSetDbId, 3)[0];
                         MongoTemplate mongoTemplate = MongoTemplateManager.get(module);
                         List<VariantSetMetadataFields> fields = brapiCache.getVariantSet(mongoTemplate, variantSetDbId).getMetadataFields();
                         if (fields != null) {
                             List<String> abbr = fields.stream().map(VariantSetMetadataFields::getFieldAbbreviation).collect(Collectors.toList());
                             abbreviations.addAll(abbr);
                         }                        
-                    } else if (!module.equals(GigwaSearchVariantsRequest.getInfoFromId(variantSetDbId, 3)[0])) {
+                    } else if (!module.equals(Helper.getInfoFromId(variantSetDbId, 3)[0])) {
 
                     }
                 }         
@@ -533,9 +577,9 @@ public class CallsApiController implements CallsApi {
                 List<String> variantIds = new ArrayList();
                 for (String v:result.getVariantDbIds()) {
                     if (module == null) {
-                        module = GigwaSearchVariantsRequest.getInfoFromId(v, 2)[0];
+                        module = Helper.getInfoFromId(v, 2)[0];
                     }
-                    variantIds.add(GigwaSearchVariantsRequest.getInfoFromId(v, 2)[1]);
+                    variantIds.add(Helper.getInfoFromId(v, 2)[1]);
                 }
                    
                 Query q = new Query(Criteria.where("_id").in(variantIds));
@@ -597,16 +641,16 @@ public class CallsApiController implements CallsApi {
     private VariantRunData convertCallToVrd(Call c, VariantData vd, int projectId, String runName) {
         VariantRunData vrd = new VariantRunData(new VariantRunDataId(projectId, runName, vd.getId()));
         vrd.setAdditionalInfo((HashMap<String, Object>) (Map) c.getAdditionalInfo());
-        vrd.setReferencePosition(vd.getReferencePosition());
+        vrd.setReferencePosition(vd.getReferencePosition());	// in case we have an old-style DB that doesn't support assemblies
+        vrd.setPositions(vd.getPositions());
         vrd.setKnownAlleles(vd.getKnownAlleles());
         HashMap<Integer, SampleGenotype> genotypes = new HashMap();
         SampleGenotype sg = new SampleGenotype();
         String gt = c.getGenotypeValue().equals("1/0") ? "0/1" : c.getGenotypeValue();
         sg.setCode(gt);
-        String[] splitCallSetDbId = GigwaSearchVariantsRequest.getInfoFromId(c.getCallSetDbId(), 2);
+        String[] splitCallSetDbId = Helper.getInfoFromId(c.getCallSetDbId(), 2);
         genotypes.put(Integer.valueOf(splitCallSetDbId[1]), sg);
         vrd.setSampleGenotypes(genotypes);
         return vrd;
     }
-
 }
