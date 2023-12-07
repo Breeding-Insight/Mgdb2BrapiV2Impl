@@ -1,15 +1,19 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+    
     <modelVersion>4.0.0</modelVersion>
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <mgdb2_export.version>2.6.2-RELEASE</mgdb2_export.version>
+	    <project.version>2.0.6-RELEASE</project.version>
+    </properties>
+    
 	<groupId>fr.cirad</groupId>
 	<artifactId>Mgdb2BrapiV2Impl</artifactId>
 	<packaging>jar</packaging> 
-    <version>2.0.3-RELEASE</version>
-    <properties>
-        <java.version>1.8</java.version>
-        <maven.compiler.source>${java.version}</maven.compiler.source>
-        <maven.compiler.target>${java.version}</maven.compiler.target>
-        <Gigwa2ServiceImpl.version>2.5.2-alpha</Gigwa2ServiceImpl.version>
-    </properties>
+    <version>${project.version}</version>
+
     <build>
         <sourceDirectory>src/main/java</sourceDirectory>
     </build>
@@ -17,30 +21,27 @@
         <dependency>
   			<groupId>fr.cirad</groupId>
 			<artifactId>Mgdb2BrapiImpl</artifactId>
-			<version>1.1.3-RELEASE</version>
+			<version>1.1.6-RELEASE</version>
         </dependency>
         <dependency>
             <groupId>fr.cirad</groupId>
-            <artifactId>Gigwa2ServiceImpl</artifactId>
-            <version>${Gigwa2ServiceImpl.version}</version>
+            <artifactId>Mgdb2Export</artifactId>
+            <version>${mgdb2_export.version}</version>
             <exclusions>
                 <exclusion>
-                    <groupId>com.fasterxml.jackson.core</groupId>
-                    <artifactId>jackson-annotations</artifactId>
-                </exclusion>
-                <exclusion>
-		            <groupId>org.ga4gh</groupId>
-		            <artifactId>ga4gh-schemas</artifactId>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
                 </exclusion>
             </exclusions>
         </dependency>
-        <dependency>
-            <groupId>javax.servlet</groupId>
-            <artifactId>servlet-api</artifactId>
-            <version>2.5</version>
-            <scope>provided</scope>
-        </dependency>
         
+ 		<dependency>
+    		<groupId>javax.servlet</groupId>
+    		<artifactId>javax.servlet-api</artifactId>
+    		<version>4.0.1</version>
+    		<scope>provided</scope>
+    	</dependency>
+
 		<dependency>
 		    <groupId>javax.xml.bind</groupId>
 		    <artifactId>jaxb-api</artifactId>
@@ -67,7 +68,7 @@
                 <dependency>
             <groupId>fr.cirad</groupId>
             <artifactId>Mgdb2BrapiModel</artifactId>
-            <version>1.0.2-RELEASE</version>
+            <version>1.0.4-RELEASE</version>
             <type>jar</type>
         </dependency>
     </dependencies>
